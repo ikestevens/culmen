@@ -37,7 +37,10 @@ def has_api_key() -> bool:
 
 @st.cache_data(ttl=86400, show_spinner="Loading eBird taxonomy…")
 def load_taxonomy() -> dict:
-    """Returns {ALPHA_CODE: (speciesCode, comName)}"""
+    """Returns:
+      by_alpha: {ALPHA_CODE: (speciesCode, comName)}
+      by_code:  {speciesCode: {alpha, comName, family}}
+    """
     resp = requests.get(
         f"{EBIRD_BASE}/ref/taxonomy/ebird",
         headers=ebird_headers(),
@@ -45,11 +48,18 @@ def load_taxonomy() -> dict:
         timeout=60,
     )
     resp.raise_for_status()
-    lookup = {}
+    by_alpha, by_code = {}, {}
     for sp in resp.json():
-        for code in sp.get("bandingCodes", []):
-            lookup[code.upper()] = (sp["speciesCode"], sp["comName"])
-    return lookup
+        codes = sp.get("bandingCodes", [])
+        alpha = codes[0] if codes else ""
+        by_code[sp["speciesCode"]] = {
+            "alpha": alpha,
+            "comName": sp["comName"],
+            "family": sp.get("familyComName", "Other"),
+        }
+        for code in codes:
+            by_alpha[code.upper()] = (sp["speciesCode"], sp["comName"])
+    return {"by_alpha": by_alpha, "by_code": by_code}
 
 
 @st.cache_data(ttl=3600, show_spinner="Fetching recent DC sightings…")
@@ -93,7 +103,7 @@ def get_photos(species_code: str, sex: str = "", age: str = "") -> list:
 
 
 def lookup_species(alpha: str, taxonomy: dict):
-    return taxonomy.get(alpha.upper().strip(), (None, None))
+    return taxonomy["by_alpha"].get(alpha.upper().strip(), (None, None))
 
 
 def aab_url(common_name: str) -> str:
@@ -262,9 +272,20 @@ def main():
         st.markdown("### Recent DC Sightings")
         if has_api_key():
             dc_birds = get_dc_species()
+            taxonomy = load_taxonomy()
             if dc_birds:
-                for bird in dc_birds[:40]:
-                    st.caption(f"• {bird['comName']}")
+                by_family = {}
+                for bird in dc_birds:
+                    meta = taxonomy["by_code"].get(bird["speciesCode"], {})
+                    family = meta.get("family", "Other")
+                    alpha = meta.get("alpha", "")
+                    by_family.setdefault(family, []).append(
+                        f"{alpha} — {bird['comName']}" if alpha else bird["comName"]
+                    )
+                for family, birds in by_family.items():
+                    st.markdown(f"**{family}**")
+                    for b in birds:
+                        st.caption(b)
             else:
                 st.caption("Could not load DC sightings.")
         else:
