@@ -57,7 +57,7 @@ def get_dc_species() -> list:
     resp = requests.get(
         f"{EBIRD_BASE}/data/obs/US-DC/recent",
         headers=ebird_headers(),
-        params={"maxResults": 200},
+        params={"maxResults": 200, "back": 30, "cat": "species"},
         timeout=15,
     )
     if not resp.ok:
