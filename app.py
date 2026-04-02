@@ -36,7 +36,7 @@ def has_api_key() -> bool:
 
 
 @st.cache_data(ttl=86400, show_spinner="Loading eBird taxonomy…")
-def load_taxonomy() -> dict:
+def load_taxonomy(_v=2) -> dict:
     """Returns:
       by_alpha: {ALPHA_CODE: (speciesCode, comName)}
       by_code:  {speciesCode: {alpha, comName, family}}
@@ -103,7 +103,16 @@ def get_photos(species_code: str, sex: str = "", age: str = "") -> list:
 
 
 def lookup_species(alpha: str, taxonomy: dict):
-    return taxonomy["by_alpha"].get(alpha.upper().strip(), (None, None))
+    key = alpha.upper().strip()
+    # Try 4-letter alpha code
+    result = taxonomy["by_alpha"].get(key)
+    if result:
+        return result
+    # Try as a 6-letter eBird species code (e.g. "amepip")
+    meta = taxonomy["by_code"].get(key.lower())
+    if meta:
+        return (key.lower(), meta["comName"])
+    return (None, None)
 
 
 def aab_url(common_name: str) -> str:
