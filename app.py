@@ -112,6 +112,7 @@ def init_quiz(sp1_name, sp1_code, sp2_name, sp2_code, num_photos):
         quiz_idx=0,
         score=0,
         answers=[],
+        feedback=None,
         sp1_name=sp1_name,
         sp2_name=sp2_name,
         sp1_code=sp1_code,
@@ -129,7 +130,7 @@ def _record_answer(guess, correct):
         "guess": guess,
         "ok": is_correct,
     })
-    st.session_state.quiz_idx += 1
+    st.session_state.feedback = {"is_correct": is_correct, "guess": guess, "correct": correct}
     st.rerun()
 
 
@@ -151,13 +152,25 @@ def quiz_view():
     with col_img:
         st.progress(idx / total, text=f"Photo {idx + 1} of {total}  •  Score: {st.session_state.score}/{idx}")
         st.image(url, use_container_width=True)
-        btn1, btn2 = st.columns(2)
-        with btn1:
-            if st.button(sp1, key=f"a_{idx}", use_container_width=True, type="primary"):
-                _record_answer(sp1, correct)
-        with btn2:
-            if st.button(sp2, key=f"b_{idx}", use_container_width=True, type="primary"):
-                _record_answer(sp2, correct)
+
+        feedback = st.session_state.get("feedback")
+        if feedback:
+            if feedback["is_correct"]:
+                st.success(f"Correct! That's a {feedback['correct']}.")
+            else:
+                st.error(f"Wrong — that's a **{feedback['correct']}**, not a {feedback['guess']}.")
+            if st.button("Next →", key=f"next_{idx}", use_container_width=True, type="primary"):
+                st.session_state.feedback = None
+                st.session_state.quiz_idx += 1
+                st.rerun()
+        else:
+            btn1, btn2 = st.columns(2)
+            with btn1:
+                if st.button(sp1, key=f"a_{idx}", use_container_width=True, type="primary"):
+                    _record_answer(sp1, correct)
+            with btn2:
+                if st.button(sp2, key=f"b_{idx}", use_container_width=True, type="primary"):
+                    _record_answer(sp2, correct)
 
     with col_aside:
         st.markdown("### ID Tips")
@@ -187,15 +200,20 @@ def results_view():
     wrong = [a for a in st.session_state.answers if not a["ok"]]
     if wrong:
         st.markdown("### Missed Photos")
-        for i in range(0, len(wrong), 3):
-            cols = st.columns(3)
-            for j, a in enumerate(wrong[i : i + 3]):
-                with cols[j]:
-                    st.image(a["url"], use_container_width=True)
-                    st.caption(f"You said: **{a['guess']}**\nCorrect: {a['correct']}")
+        by_species = {}
+        for a in wrong:
+            by_species.setdefault(a["correct"], []).append(a)
+        for species, misses in by_species.items():
+            st.markdown(f"#### {species} — {len(misses)} missed")
+            for i in range(0, len(misses), 3):
+                cols = st.columns(3)
+                for j, a in enumerate(misses[i : i + 3]):
+                    with cols[j]:
+                        st.image(a["url"], use_container_width=True)
+                        st.caption(f"You said: {a['guess']}")
 
     if st.button("New Quiz", type="primary"):
-        for k in ["quiz", "quiz_idx", "score", "answers", "sp1_name", "sp2_name", "sp1_code", "sp2_code"]:
+        for k in ["quiz", "quiz_idx", "score", "answers", "feedback", "sp1_name", "sp2_name", "sp1_code", "sp2_code"]:
             st.session_state.pop(k, None)
         st.rerun()
 
