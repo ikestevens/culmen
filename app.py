@@ -71,21 +71,25 @@ def get_dc_species() -> list:
 
 
 @st.cache_data(ttl=3600, show_spinner="Fetching photos…")
-def get_photos(species_code: str, count: int = 10) -> list:
-    resp = requests.get(
-        MACAULAY_SEARCH,
-        params={
-            "taxonCode": species_code,
-            "mediaType": "p",
-            "count": count,
-            "sort": "rating_rank_desc",
-        },
-        timeout=15,
-    )
+def get_photos(species_code: str, sex: str = "", age: str = "") -> list:
+    """Fetch up to 100 top-rated photos and return them shuffled, so each quiz draws a fresh random sample."""
+    params = {
+        "taxonCode": species_code,
+        "mediaType": "p",
+        "count": 100,
+        "sort": "rating_rank_desc",
+    }
+    if sex:
+        params["sex"] = sex
+    if age:
+        params["age"] = age
+    resp = requests.get(MACAULAY_SEARCH, params=params, timeout=15)
     if not resp.ok:
         return []
     content = resp.json().get("results", {}).get("content", [])
-    return [f"{MACAULAY_CDN}/{r['assetId']}/1800" for r in content if r.get("assetId")]
+    urls = [f"{MACAULAY_CDN}/{r['assetId']}/1800" for r in content if r.get("assetId")]
+    random.shuffle(urls)
+    return urls
 
 
 def lookup_species(alpha: str, taxonomy: dict):
@@ -96,15 +100,17 @@ def aab_url(common_name: str) -> str:
     return f"{AAB_GUIDE}/{common_name.replace(' ', '_')}/id"
 
 
-def init_quiz(sp1_name, sp1_code, sp2_name, sp2_code, num_photos):
-    photos1 = get_photos(sp1_code, num_photos)
-    photos2 = get_photos(sp2_code, num_photos)
+def init_quiz(sp1_name, sp1_code, sp2_name, sp2_code, num_photos, sex, age):
+    photos1 = get_photos(sp1_code, sex, age)
+    photos2 = get_photos(sp2_code, sex, age)
     if not photos1:
-        st.error(f"No photos found for {sp1_name}")
+        st.error(f"No photos found for {sp1_name} with those filters.")
         return
     if not photos2:
-        st.error(f"No photos found for {sp2_name}")
+        st.error(f"No photos found for {sp2_name} with those filters.")
         return
+    photos1 = photos1[:num_photos]
+    photos2 = photos2[:num_photos]
     quiz = [(url, sp1_name) for url in photos1] + [(url, sp2_name) for url in photos2]
     random.shuffle(quiz)
     st.session_state.update(
@@ -234,6 +240,11 @@ def main():
         code2 = st.text_input("Bird 2", value="PUFI", max_chars=6).upper().strip()
         num_photos = st.slider("Photos per species", min_value=5, max_value=20, value=10)
 
+        sex_options = {"Any sex": "", "Male only": "M", "Female only": "F"}
+        age_options = {"Any age": "", "Adult only": "adult", "Immature only": "immature"}
+        sex = sex_options[st.selectbox("Sex filter", list(sex_options.keys()))]
+        age = age_options[st.selectbox("Age filter", list(age_options.keys()))]
+
         if st.button("Start Quiz", type="primary", use_container_width=True):
             taxonomy = load_taxonomy()
             sp1_code, sp1_name = lookup_species(code1, taxonomy)
@@ -245,7 +256,7 @@ def main():
             elif sp1_code == sp2_code:
                 st.error("Both codes resolve to the same species.")
             else:
-                init_quiz(sp1_name, sp1_code, sp2_name, sp2_code, num_photos)
+                init_quiz(sp1_name, sp1_code, sp2_name, sp2_code, num_photos, sex, age)
 
         st.divider()
         st.markdown("### Recent DC Sightings")
